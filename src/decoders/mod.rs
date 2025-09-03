@@ -21,6 +21,8 @@ pub fn decode_pool(
             crate::decoders::raydium_clmm::try_decode(program, account, data)
         }
     }?;
+    // ensure the returned info reflects the requested DEX kind
+    info.dex = kind;
     info.is_token2022_base = info
         .base_mint
         .map(|m| token.is_token2022(&m).unwrap_or(false))
