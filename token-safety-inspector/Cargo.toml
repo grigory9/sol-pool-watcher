@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/token_safety", "crates/token_safety_http", "crates/token_safety_cli"]
+resolver = "2"

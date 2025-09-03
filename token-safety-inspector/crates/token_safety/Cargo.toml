@@ -1,0 +1,16 @@
+[package]
+name = "token_safety"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+solana-sdk = "1.18"
+solana-client = "1.18"
+solana-account-decoder = "1.18"
+spl-token = "8"
+serde_json = "1"
+tokio = { version = "1", features=["macros","rt"] }
+
+
