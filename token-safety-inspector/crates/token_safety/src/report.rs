@@ -1,6 +1,27 @@
 use serde::{Serialize, Deserialize};
 use solana_sdk::pubkey::Pubkey;
 
+mod pubkey_serde {
+    use std::str::FromStr;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use solana_sdk::pubkey::Pubkey;
+
+    pub fn serialize<S>(pk: &Pubkey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&pk.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Pubkey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Pubkey::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Which token program owns the mint account.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -35,6 +56,7 @@ pub struct TransferFeeInfo {
 /// Result of analyzing a mint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SafetyReport {
+    #[serde(with = "pubkey_serde")]
     pub mint: Pubkey,
     pub program_owner: ProgramOwner,
     pub decimals: u8,

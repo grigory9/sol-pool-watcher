@@ -2179,6 +2179,7 @@ dependencies = [
  "bs58",
  "clap",
  "dashmap 6.1.0",
+ "futures",
  "once_cell",
  "serde",
  "serde_json",
