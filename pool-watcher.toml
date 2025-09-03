@@ -1,0 +1,15 @@
+rpc_url = "https://api.mainnet-beta.solana.com"
+ws_url = "wss://api.mainnet-beta.solana.com"
+periodic_resync_min = 30
+
+[[programs]]
+kind = "OrcaWhirlpools"
+id = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"
+
+[[programs]]
+kind = "RaydiumClmm"
+id = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"
+
+[[programs]]
+kind = "RaydiumCpmm"
+id = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"

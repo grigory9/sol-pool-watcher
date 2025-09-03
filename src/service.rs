@@ -14,7 +14,7 @@ use solana_client::{
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use std::{sync::Arc, thread};
+use std::{str::FromStr, sync::Arc, thread};
 use tokio::{
     runtime::Builder,
     time::{sleep, Duration},
@@ -33,6 +33,37 @@ pub struct PoolWatcherConfig {
     pub ws_url: String,
     pub programs: Vec<ProgramConfig>,
     pub periodic_resync_min: u64,
+}
+
+impl Default for PoolWatcherConfig {
+    fn default() -> Self {
+        Self {
+            rpc_url: "https://api.mainnet-beta.solana.com".into(),
+            ws_url: "wss://api.mainnet-beta.solana.com".into(),
+            periodic_resync_min: 30,
+            programs: vec![
+                ProgramConfig {
+                    kind: DexKind::OrcaWhirlpools,
+                    id: Pubkey::from_str("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc")
+                        .expect("program id"),
+                },
+                ProgramConfig {
+                    kind: DexKind::RaydiumClmm,
+                    id: Pubkey::from_str(
+                        "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+                    )
+                    .expect("program id"),
+                },
+                ProgramConfig {
+                    kind: DexKind::RaydiumCpmm,
+                    id: Pubkey::from_str(
+                        "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+                    )
+                    .expect("program id"),
+                },
+            ],
+        }
+    }
 }
 
 pub struct PoolWatcher {
