@@ -7,7 +7,7 @@ use crate::{
 use serde::Deserialize;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
-    pubsub_client::PubsubClient,
+    nonblocking::pubsub_client::PubsubClient,
     rpc_client::RpcClient,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionLogsConfig},
     rpc_response::{Response, RpcKeyedAccount},
@@ -20,9 +20,26 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tracing::error;
+use futures::StreamExt;
+use base64::{engine::general_purpose, Engine as _};
+
+mod pubkey_serde {
+    use std::str::FromStr;
+    use serde::{Deserialize, Deserializer};
+    use solana_sdk::pubkey::Pubkey;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Pubkey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Pubkey::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProgramConfig {
+    #[serde(deserialize_with = "pubkey_serde::deserialize")]
     pub id: Pubkey,
     pub kind: DexKind,
 }
@@ -209,64 +226,63 @@ async fn subscribe_program(
     inventory: Inventory,
     token: Arc<dyn TokenIntrospectionProvider>,
 ) -> anyhow::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        let cfg = RpcProgramAccountsConfig {
-            filters: None,
-            account_config: RpcAccountInfoConfig {
-                encoding: Some(UiAccountEncoding::Base64),
-                commitment: Some(CommitmentConfig::processed()),
-                data_slice: None,
-                min_context_slot: None,
-            },
-            with_context: None,
-            sort_results: None,
+    let client = PubsubClient::new(&ws_url).await?;
+    let cfg = RpcProgramAccountsConfig {
+        filters: None,
+        account_config: RpcAccountInfoConfig {
+            encoding: Some(UiAccountEncoding::Base64),
+            commitment: Some(CommitmentConfig::processed()),
+            data_slice: None,
+            min_context_slot: None,
+        },
+        with_context: None,
+        sort_results: None,
+    };
+    let (mut notifications, unsubscribe) =
+        client.program_subscribe(&program.id, Some(cfg)).await?;
+    while let Some(Response {
+        value: RpcKeyedAccount { pubkey, account },
+        ..
+    }) = notifications.next().await
+    {
+        let acc_key = pubkey.parse::<Pubkey>().ok();
+        let data_len;
+        let data_bytes = match &account.data {
+            solana_account_decoder::UiAccountData::Binary(b64, _) => {
+                let v = general_purpose::STANDARD.decode(b64).unwrap_or_default();
+                data_len = v.len();
+                Some(v)
+            }
+            _ => {
+                data_len = 0;
+                None
+            }
         };
-        let (subscription, receiver) =
-            PubsubClient::program_subscribe(&ws_url, &program.id, Some(cfg))?;
-        for Response {
-            value: RpcKeyedAccount { pubkey, account },
-            ..
-        } in receiver
-        {
-            let acc_key = pubkey.parse::<Pubkey>().ok();
-            let data_len;
-            let data_bytes = match &account.data {
-                solana_account_decoder::UiAccountData::Binary(b64, _) => {
-                    let v = base64::decode(b64).unwrap_or_default();
-                    data_len = v.len();
-                    Some(v)
-                }
-                _ => {
-                    data_len = 0;
-                    None
-                }
-            };
-            if let (Some(acc_key), Some(bytes)) = (acc_key, data_bytes) {
-                if let Some(info) =
-                    decode_pool(program.kind, program.id, acc_key, &bytes, token.as_ref())
-                {
-                    let existed_before = inventory.count_program(&program.id) > 0;
-                    inventory.upsert(info.clone());
-                    bus.publish(if existed_before {
-                        PoolEvent::AccountChanged {
-                            info,
-                            data_len,
-                            slot: 0,
-                        }
-                    } else {
-                        PoolEvent::AccountNew {
-                            info,
-                            data_len,
-                            slot: 0,
-                        }
-                    });
-                }
+        if let (Some(acc_key), Some(bytes)) = (acc_key, data_bytes) {
+            if let Some(info) =
+                decode_pool(program.kind, program.id, acc_key, &bytes, token.as_ref())
+            {
+                let existed_before = inventory.count_program(&program.id) > 0;
+                inventory.upsert(info.clone());
+                bus.publish(if existed_before {
+                    PoolEvent::AccountChanged {
+                        info,
+                        data_len,
+                        slot: 0,
+                    }
+                } else {
+                    PoolEvent::AccountNew {
+                        info,
+                        data_len,
+                        slot: 0,
+                    }
+                });
             }
         }
-        drop(subscription);
-        Ok::<(), anyhow::Error>(())
-    })
-    .await??;
+    }
+    unsubscribe().await;
+    drop(notifications);
+    client.shutdown().await?;
     Ok(())
 }
 
@@ -275,27 +291,27 @@ async fn subscribe_logs(
     program: ProgramConfig,
     bus: SharedPoolBus,
 ) -> anyhow::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        let filter = solana_client::rpc_config::RpcTransactionLogsFilter::Mentions(vec![program
-            .id
-            .to_string()]);
-        let (subscription, receiver) = PubsubClient::logs_subscribe(
-            &ws_url,
+    let client = PubsubClient::new(&ws_url).await?;
+    let filter = solana_client::rpc_config::RpcTransactionLogsFilter::Mentions(vec![
+        program.id.to_string(),
+    ]);
+    let (mut notifications, unsubscribe) = client
+        .logs_subscribe(
             filter,
             RpcTransactionLogsConfig {
                 commitment: Some(CommitmentConfig::processed()),
             },
-        )?;
-        for Response { value, context } in receiver {
-            bus.publish(PoolEvent::ProgramLog {
-                program: program.id,
-                signature: value.signature,
-                slot: context.slot,
-            });
-        }
-        drop(subscription);
-        Ok::<(), anyhow::Error>(())
-    })
-    .await??;
+        )
+        .await?;
+    while let Some(Response { value, context }) = notifications.next().await {
+        bus.publish(PoolEvent::ProgramLog {
+            program: program.id,
+            signature: value.signature,
+            slot: context.slot,
+        });
+    }
+    unsubscribe().await;
+    drop(notifications);
+    client.shutdown().await?;
     Ok(())
 }
