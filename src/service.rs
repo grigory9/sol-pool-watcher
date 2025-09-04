@@ -45,11 +45,19 @@ pub struct ProgramConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct TelegramConfig {
+    pub bot_token: String,
+    pub chat_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct PoolWatcherConfig {
     pub rpc_url: String,
     pub ws_url: String,
     pub programs: Vec<ProgramConfig>,
     pub periodic_resync_min: u64,
+    #[serde(default)]
+    pub telegram: Option<TelegramConfig>,
 }
 
 impl Default for PoolWatcherConfig {
@@ -79,6 +87,7 @@ impl Default for PoolWatcherConfig {
                     .expect("program id"),
                 },
             ],
+            telegram: None,
         }
     }
 }

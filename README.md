@@ -51,3 +51,8 @@ tokio::spawn(async move {
 
 For deeper inspection of token metadata or supply, see the [`token-safety-inspector`](token-safety-inspector) workspace.
 
+## Telegram notifications
+
+Optionally configure a `[telegram]` section in `pool-watcher.toml` with your bot token and chat id. When enabled, the `pool-watcher`
+binary sends a message whenever it discovers a new pool whose tokens are standard SPL mints (not token2022).
+

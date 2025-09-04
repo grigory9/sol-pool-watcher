@@ -13,3 +13,7 @@ id = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"
 [[programs]]
 kind = "RaydiumCpmm"
 id = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+
+[telegram]
+bot_token = "YOUR_BOT_TOKEN"
+chat_id = "123456789"
