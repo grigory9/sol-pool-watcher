@@ -7,6 +7,6 @@ pub mod types;
 
 pub use bus::{PoolBus, SharedPoolBus};
 pub use decoders::TokenIntrospectionProvider;
-pub use service::{PoolWatcher, PoolWatcherConfig, ProgramConfig};
+pub use service::{PoolWatcher, PoolWatcherConfig, ProgramConfig, TelegramConfig};
 pub use token::TokenSafetyProvider;
 pub use types::{DexKind, PoolEvent, PoolId, PoolInfo};
