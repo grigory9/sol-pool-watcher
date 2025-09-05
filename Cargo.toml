@@ -33,3 +33,13 @@ spl-token = "8"
 [[bin]]
 name = "pool-watcher"
 path = "src/bin/pool-watcher.rs"
+
+[workspace]
+members = [
+    ".",
+    "crates/common_types",
+    "crates/token_decode",
+    "crates/tg_publisher",
+    "crates/liq_metrics",
+    "crates/hype_score",
+]
