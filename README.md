@@ -51,3 +51,23 @@ tokio::spawn(async move {
 
 For deeper inspection of token metadata or supply, see the [`token-safety-inspector`](token-safety-inspector) workspace.
 
+
+## Telegram publishing and token analysis
+
+This repository now includes reusable crates for token decoding (`token_decode`),
+Telegram publishing (`tg_publisher`), quick liquidity metrics (`liq_metrics`)
+and hype scoring (`hype_score`). They share common structs in `common_types`.
+
+To publish pool alerts to Telegram, set the following environment variables:
+
+```
+TG_BOT_TOKEN=123456:ABCDEF
+TG_CHANNEL_ID=@channel_name
+TG_SEND_JSON_ATTACHMENT=true
+```
+
+`tg_publisher` automatically escapes MarkdownV2 and can attach the structured
+`PoolTokenBundle` as a JSON document.
+
+The JSON schema for a `PoolTokenBundle` alert is available in
+`docs/pool_token_bundle.schema.json`.

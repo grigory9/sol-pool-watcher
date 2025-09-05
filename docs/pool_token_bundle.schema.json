@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PoolTokenBundle",
+  "type": "object",
+  "required": ["pool","program","token_a","token_b","ts_ms"],
+  "properties": {
+    "pool": { "type":"string" },
+    "program": { "type":"string" },
+    "fee_bps": { "type":["integer","null"] },
+    "tick_spacing": { "type":["integer","null"] },
+    "ts_ms": { "type":"integer" },
+    "token_a": {
+      "type":"object",
+      "required":["mint","program","decimals","supply","mint_authority_none","freeze_authority_none","flags","decision_safe"],
+      "properties": {
+        "mint":{"type":"string"},
+        "program":{"type":"string"},
+        "decimals":{"type":"integer"},
+        "supply":{"type":"integer"},
+        "mint_authority_none":{"type":"boolean"},
+        "freeze_authority_none":{"type":"boolean"},
+        "flags":{
+          "type":"object",
+          "properties":{
+            "non_transferable":{"type":"boolean"},
+            "default_frozen":{"type":"boolean"},
+            "permanent_delegate":{"type":"boolean"},
+            "transfer_hook":{"type":"boolean"},
+            "memo_required":{"type":"boolean"},
+            "confidential":{"type":"boolean"},
+            "mint_close_authority":{"type":"boolean"},
+            "transfer_fee_bps":{"type":["integer","null"]},
+            "transfer_fee_max":{"type":["integer","null"]}
+          }
+        },
+        "decision_safe":{"type":"boolean"},
+        "reasons":{"type":"array","items":{"type":"string"}},
+        "warnings":{"type":"array","items":{"type":"string"}}
+      }
+    },
+    "token_b": { "$ref":"#/properties/token_a" }
+  }
+}

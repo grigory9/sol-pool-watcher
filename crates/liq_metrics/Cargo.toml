@@ -1,0 +1,10 @@
+[package]
+name = "liq_metrics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+solana-client = "3"
+solana-sdk = "3"
+common_types = { path = "../common_types" }
