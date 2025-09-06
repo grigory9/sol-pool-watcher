@@ -8,10 +8,13 @@ anyhow = "1"
 serde = { version = "1", features=["derive"] }
 solana-sdk = "3"
 solana-client = "3"
-solana-account-decoder = "3"
-spl-token = "8"
-spl-token-2022 = "3"
 common_types = { path = "../common_types" }
+token_safety = { path = "../../token-safety-inspector/crates/token_safety" }
 
 [dev-dependencies]
 tokio = { version="1", features=["macros"] }
+spl-token = "8"
+spl-token-2022 = "3"
+
+[features]
+token-tests = []

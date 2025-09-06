@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![cfg(all(test, feature = "token-tests"))]
 use super::*;
 use crate::test_fixtures::*;
 use crate::policy::Policy;

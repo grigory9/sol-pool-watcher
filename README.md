@@ -71,3 +71,37 @@ TG_SEND_JSON_ATTACHMENT=true
 
 The JSON schema for a `PoolTokenBundle` alert is available in
 `docs/pool_token_bundle.schema.json`.
+
+## arb-notify orchestrator
+
+The `arb-notify` binary wires together the watcher, token analysis, liquidity
+metrics, hype scoring and Telegram publishing into a single runtime. Alerts are
+persisted as JSONL files and published to Telegram.
+
+### Environment
+
+```
+RPC_URL=https://api.mainnet-beta.solana.com
+OUT_DIR=./outbox
+TG_BOT_TOKEN=123:ABC
+TG_CHANNEL_ID=@mychannel
+QUOTE_MINTS=So11111111111111111111111111111111111111112,Es9vMFrzaCERFqqY5wNedGqc8ZG9wirtmHG2d ...
+PROBE_AMOUNT=1000000
+```
+
+### Run
+
+```
+cargo run --release --bin arb-notify
+```
+
+`arb-notify` will create files such as `outbox/alerts_enriched-2024-01-01.jsonl`
+containing one JSON object per line:
+
+```
+{"bundle":{...},"liq":{...},"hype":null}
+```
+
+Errors from Telegram publishing are written to `outbox/errors-YYYY-MM-DD.jsonl`.
+
+![telegram](docs/telegram_sample.png)
