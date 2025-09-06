@@ -133,7 +133,7 @@ struct Config {
 
 impl Config {
     fn from_env() -> Self {
-        use std::str::FromStr;
+        
         let rpc_url = std::env::var("RPC_URL")
             .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".into());
         let ws_url = rpc_url
