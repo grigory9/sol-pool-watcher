@@ -43,8 +43,15 @@ pub fn analyze_extensions(data: &[u8], _now_epoch: u64) -> (Flags, Option<Transf
             EXT_CONFIDENTIAL_TRANSFER_MINT => flags.confidential = true,
             EXT_MINT_CLOSE_AUTHORITY => flags.mint_close_authority = true,
             EXT_TRANSFER_FEE_CONFIG => {
-                // Parsing full transfer fee config is complex; mark presence only.
-                fee = Some(TransferFeeInfo { epoch: 0, fee_bps: 0, max_fee: 0 });
+                if slice.len() >= 18 {
+                    let start_fee = slice.len() - 18;
+                    let epoch = u64::from_le_bytes(slice[start_fee..start_fee+8].try_into().unwrap());
+                    let max_fee = u64::from_le_bytes(slice[start_fee+8..start_fee+16].try_into().unwrap());
+                    let fee_bps = u16::from_le_bytes(slice[start_fee+16..start_fee+18].try_into().unwrap());
+                    fee = Some(TransferFeeInfo { epoch, fee_bps, max_fee });
+                } else {
+                    fee = Some(TransferFeeInfo { epoch: 0, fee_bps: 0, max_fee: 0 });
+                }
             }
             other => others.push(format!("ext_{}", other)),
         }
@@ -53,4 +60,3 @@ pub fn analyze_extensions(data: &[u8], _now_epoch: u64) -> (Flags, Option<Transf
 
     (flags, fee, others)
 }
-

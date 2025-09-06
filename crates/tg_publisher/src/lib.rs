@@ -1,11 +1,14 @@
-use anyhow::{Result, Context};
-use serde::Serialize;
-use tokio::{sync::mpsc, time::{sleep, Duration}};
-use tracing::{warn};
+use anyhow::{Context, Result};
 use reqwest::Client;
+use serde::Serialize;
 use serde_json::json;
+use tokio::{
+    sync::mpsc,
+    time::{sleep, Duration},
+};
+use tracing::warn;
 
-use common_types::{PoolTokenBundle, EnrichedPoolAlert};
+use common_types::{EnrichedPoolAlert, PoolTokenBundle};
 
 mod markdown;
 use markdown::escape_md_v2;
@@ -30,7 +33,10 @@ impl TgPublisher {
     pub fn new_from_env() -> Result<Self> {
         let token = std::env::var("TG_BOT_TOKEN").context("TG_BOT_TOKEN not set")?;
         let chat_id = std::env::var("TG_CHANNEL_ID").context("TG_CHANNEL_ID not set")?;
-        let send_json_attachment = std::env::var("TG_SEND_JSON_ATTACHMENT").ok().map(|v| v=="1"||v.eq_ignore_ascii_case("true")).unwrap_or(true);
+        let send_json_attachment = std::env::var("TG_SEND_JSON_ATTACHMENT")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
         let (tx, rx) = mpsc::channel::<Job>(1024);
         let s = Self {
             client: Client::builder().build()?,
@@ -56,8 +62,14 @@ impl TgPublisher {
                     match send_message(&client, &api_base, &chat_id, &job.text).await {
                         Ok(_) => {
                             if send_json_attachment {
-                                if let (Some(name), Some(payload)) = (&job.json_name, &job.json_payload) {
-                                    if let Err(e) = send_document_json(&client, &api_base, &chat_id, name, payload).await {
+                                if let (Some(name), Some(payload)) =
+                                    (&job.json_name, &job.json_payload)
+                                {
+                                    if let Err(e) = send_document_json(
+                                        &client, &api_base, &chat_id, name, payload,
+                                    )
+                                    .await
+                                    {
                                         warn!(?e, "send_document failed");
                                     }
                                 }
@@ -66,8 +78,10 @@ impl TgPublisher {
                         }
                         Err(e) => {
                             warn!(?e, attempt, "send_message failed");
-                            if attempt >=5 { break; }
-                            sleep(Duration::from_millis(300*attempt as u64)).await;
+                            if attempt >= 5 {
+                                break;
+                            }
+                            sleep(Duration::from_millis(300 * attempt as u64)).await;
                         }
                     }
                 }
@@ -83,7 +97,10 @@ impl TgPublisher {
             json_name: Some(format!("pool_{}.json", &bundle.pool.to_string()[..8])),
             json_payload: Some(json_payload),
         };
-        self.queue_tx.send(job).await.map_err(|_| anyhow::anyhow!("tg queue closed"))
+        self.queue_tx
+            .send(job)
+            .await
+            .map_err(|_| anyhow::anyhow!("tg queue closed"))
     }
 
     pub async fn send_enriched_alert(&self, alert: &EnrichedPoolAlert) -> Result<()> {
@@ -91,10 +108,16 @@ impl TgPublisher {
         let json_payload = serde_json::to_string_pretty(alert)?;
         let job = Job {
             text,
-            json_name: Some(format!("enriched_{}.json", &alert.bundle.pool.to_string()[..8])),
+            json_name: Some(format!(
+                "enriched_{}.json",
+                &alert.bundle.pool.to_string()[..8]
+            )),
             json_payload: Some(json_payload),
         };
-        self.queue_tx.send(job).await.map_err(|_| anyhow::anyhow!("tg queue closed"))
+        self.queue_tx
+            .send(job)
+            .await
+            .map_err(|_| anyhow::anyhow!("tg queue closed"))
     }
 }
 
@@ -107,14 +130,21 @@ async fn send_message(client: &Client, api_base: &str, chat_id: &str, text: &str
         "disable_web_page_preview": true
     });
     let resp = client.post(&url).json(&body).send().await?;
-    if !resp.status().is_success() {
+    let status = resp.status();
+    if !status.is_success() {
         let s = resp.text().await.unwrap_or_default();
-        anyhow::bail!("TG sendMessage status={} body={}", resp.status(), s);
+        anyhow::bail!("TG sendMessage status={} body={}", status, s);
     }
     Ok(())
 }
 
-async fn send_document_json(client: &Client, api_base: &str, chat_id: &str, filename: &str, json_payload: &str) -> Result<()> {
+async fn send_document_json(
+    client: &Client,
+    api_base: &str,
+    chat_id: &str,
+    filename: &str,
+    json_payload: &str,
+) -> Result<()> {
     let url = format!("{}/sendDocument", api_base);
     let part = reqwest::multipart::Part::bytes(json_payload.as_bytes().to_vec())
         .file_name(filename.to_string())
@@ -123,81 +153,141 @@ async fn send_document_json(client: &Client, api_base: &str, chat_id: &str, file
         .text("chat_id", chat_id.to_string())
         .part("document", part);
     let resp = client.post(&url).multipart(form).send().await?;
-    if !resp.status().is_success() {
+    let status = resp.status();
+    if !status.is_success() {
         let s = resp.text().await.unwrap_or_default();
-        anyhow::bail!("TG sendDocument status={} body={}", resp.status(), s);
+        anyhow::bail!("TG sendDocument status={} body={}", status, s);
     }
     Ok(())
 }
 
 fn short(pk: &solana_sdk::pubkey::Pubkey) -> String {
     let s = pk.to_string();
-    format!("{}…{}", &s[..4], &s[s.len()-4..])
+    format!("{}…{}", &s[..4], &s[s.len() - 4..])
 }
 
 fn format_pool_message(b: &PoolTokenBundle) -> String {
-    let a_ok = if b.token_a.decision_safe { "✅" } else { "⚠️" };
-    let b_ok = if b.token_b.decision_safe { "✅" } else { "⚠️" };
+    let a_ok = if b.token_a.decision_safe {
+        "✅"
+    } else {
+        "⚠️"
+    };
+    let b_ok = if b.token_b.decision_safe {
+        "✅"
+    } else {
+        "⚠️"
+    };
     let head = format!(
         "🆕 *New Pool*  fee: *{}* bps  tick: *{}*\nPool: `{}`",
-        b.fee_bps.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into()),
-        b.tick_spacing.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into()),
+        b.fee_bps
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "n/a".into()),
+        b.tick_spacing
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "n/a".into()),
         b.pool
     );
     let head = escape_md_v2(&head);
     let a_line = escape_md_v2(&format!(
         "{} A `{}` prog={:?} freeze_none={} mint_none={}",
-        a_ok, short(&b.token_a.mint), b.token_a.program, b.token_a.freeze_authority_none, b.token_a.mint_authority_none
+        a_ok,
+        short(&b.token_a.mint),
+        b.token_a.program,
+        b.token_a.freeze_authority_none,
+        b.token_a.mint_authority_none
     ));
     let b_line = escape_md_v2(&format!(
         "{} B `{}` prog={:?} freeze_none={} mint_none={}",
-        b_ok, short(&b.token_b.mint), b.token_b.program, b.token_b.freeze_authority_none, b.token_b.mint_authority_none
+        b_ok,
+        short(&b.token_b.mint),
+        b.token_b.program,
+        b.token_b.freeze_authority_none,
+        b.token_b.mint_authority_none
     ));
     let mut reasons = Vec::new();
     reasons.extend(b.token_a.reasons.iter().cloned());
     reasons.extend(b.token_b.reasons.iter().cloned());
-    let reasons = if reasons.is_empty() { "—".to_string() } else { reasons.join(", ") };
+    let reasons = if reasons.is_empty() {
+        "—".to_string()
+    } else {
+        reasons.join(", ")
+    };
     let reasons = escape_md_v2(&reasons);
-    format!(
-        "{}\n{}\n{}\n*Reasons:* {}",
-        head, a_line, b_line, reasons
-    )
+    format!("{}\n{}\n{}\n*Reasons:* {}", head, a_line, b_line, reasons)
 }
 
 fn format_enriched_message(a: &EnrichedPoolAlert) -> String {
     let b = &a.bundle;
     let head = escape_md_v2(&format!(
         "🆕 *New Pool*\nfee: *{}* bps, tick: *{}*\nPool: `{}`",
-        b.fee_bps.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into()),
-        b.tick_spacing.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into()),
+        b.fee_bps
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "n/a".into()),
+        b.tick_spacing
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "n/a".into()),
         b.pool
     ));
-    let a_ok = if b.token_a.decision_safe { "✅" } else { "⚠️" };
-    let b_ok = if b.token_b.decision_safe { "✅" } else { "⚠️" };
+    let a_ok = if b.token_a.decision_safe {
+        "✅"
+    } else {
+        "⚠️"
+    };
+    let b_ok = if b.token_b.decision_safe {
+        "✅"
+    } else {
+        "⚠️"
+    };
     let a_line = escape_md_v2(&format!(
         "{} A `{}` prog={:?} fee_ext={:?}",
-        a_ok, short(&b.token_a.mint), b.token_a.program, b.token_a.flags.transfer_fee_bps
+        a_ok,
+        short(&b.token_a.mint),
+        b.token_a.program,
+        b.token_a.flags.transfer_fee_bps
     ));
     let b_line = escape_md_v2(&format!(
         "{} B `{}` prog={:?} fee_ext={:?}",
-        b_ok, short(&b.token_b.mint), b.token_b.program, b.token_b.flags.transfer_fee_bps
+        b_ok,
+        short(&b.token_b.mint),
+        b.token_b.program,
+        b.token_b.flags.transfer_fee_bps
     ));
     let liq = if let Some(l) = &a.liq {
-        let p = l.price_ab.map(|v| format!("{:.6}", v)).unwrap_or_else(|| "n/a".into());
-        let tvl = l.tvl_quote.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "n/a".into());
-        let ql = l.quote_liquidity.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "n/a".into());
-        escape_md_v2(&format!("💧 *Liquidity*\nprice(A/B): {} | reserves: {}/{}\nTVL(q): {} | quote_liq: {}", p, l.reserves_a, l.reserves_b, tvl, ql))
-    } else { escape_md_v2("💧 *Liquidity*\nN/A") };
+        let p = l
+            .price_ab
+            .map(|v| format!("{:.6}", v))
+            .unwrap_or_else(|| "n/a".into());
+        let tvl = l
+            .tvl_quote
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "n/a".into());
+        let ql = l
+            .quote_liquidity
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "n/a".into());
+        escape_md_v2(&format!(
+            "💧 *Liquidity*\nprice(A/B): {} | reserves: {}/{}\nTVL(q): {} | quote_liq: {}",
+            p, l.reserves_a, l.reserves_b, tvl, ql
+        ))
+    } else {
+        escape_md_v2("💧 *Liquidity*\nN/A")
+    };
     let hype = if let Some(h) = &a.hype {
         escape_md_v2(&format!(
             "🔥 *Hype*\n60s swaps: {} | unique: {} | B/S: {:.2}\nLP Δ(300s): {} | score: {}/100",
             h.swaps_60s, h.unique_traders_60s, h.buy_sell_ratio, h.lp_net_300s, h.score
         ))
-    } else { escape_md_v2("🔥 *Hype*\nN/A") };
+    } else {
+        escape_md_v2("🔥 *Hype*\nN/A")
+    };
     let mut reasons = Vec::new();
     reasons.extend(b.token_a.reasons.iter().cloned());
     reasons.extend(b.token_b.reasons.iter().cloned());
-    let reasons = if reasons.is_empty() { "—".to_string() } else { reasons.join(", ") };
+    let reasons = if reasons.is_empty() {
+        "—".to_string()
+    } else {
+        reasons.join(", ")
+    };
     let reasons = escape_md_v2(&reasons);
     format!("{head}\n{a_line}\n{b_line}\n{liq}\n{hype}\n*Reasons:* {reasons}")
 }
