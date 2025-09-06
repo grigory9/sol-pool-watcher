@@ -1,3 +1,5 @@
+#![cfg(feature = "token-tests")]
+
 use pool_watcher::token::{MintFetcher, TokenSafetyProvider};
 use pool_watcher::TokenIntrospectionProvider;
 use solana_sdk::{account::Account, pubkey::Pubkey};

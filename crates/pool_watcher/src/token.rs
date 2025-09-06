@@ -1,7 +1,12 @@
 use anyhow::Result;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
-use token_safety::{analyze_mint, ProgramOwner};
+use once_cell::sync::Lazy;
+use std::str::FromStr;
+
+static TOKEN_2022_PROGRAM_ID: Lazy<Pubkey> = Lazy::new(|| {
+    Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap()
+});
 
 use crate::decoders::TokenIntrospectionProvider;
 
@@ -21,7 +26,7 @@ impl MintFetcher for RpcClient {
     }
 }
 
-/// Provider that inspects token metadata using the `token_safety` crate.
+/// Provider that inspects token metadata using direct account owner checks.
 pub struct TokenSafetyProvider<F: MintFetcher> {
     rpc: F,
 }
@@ -35,8 +40,6 @@ impl<F: MintFetcher> TokenSafetyProvider<F> {
 impl<F: MintFetcher> TokenIntrospectionProvider for TokenSafetyProvider<F> {
     fn is_token2022(&self, mint: &Pubkey) -> Result<bool> {
         let account = self.rpc.get_account(mint)?;
-        let epoch = self.rpc.get_epoch()?;
-        let report = analyze_mint(&account, epoch, 0)?;
-        Ok(matches!(report.program_owner, ProgramOwner::Token2022))
+        Ok(account.owner == *TOKEN_2022_PROGRAM_ID)
     }
 }

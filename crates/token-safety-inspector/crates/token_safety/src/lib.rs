@@ -38,10 +38,10 @@ pub fn is_safe(report: &SafetyReport, policy: &Policy, route_supports_memo: bool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_sdk::{pubkey::Pubkey, account::Account};
-    use std::str::FromStr;
+    use solana_sdk::{account::Account, pubkey::Pubkey};
     use spl_token::state as spl_v1;
     use spl_token::solana_program::program_pack::Pack;
+    use std::str::FromStr;
 
     fn create_v1_mint() -> Account {
         use spl_token::solana_program::program_option::COption;
@@ -72,9 +72,35 @@ mod tests {
             };
             spl_v1::Mint::pack(mint, &mut data[0..base_len]).unwrap();
         }
-        // append TLV for NonTransferable
+        // append TLV for NonTransferable (type 9, length 0)
         data[base_len..base_len+2].copy_from_slice(&9u16.to_le_bytes());
         data[base_len+2..base_len+4].copy_from_slice(&0u16.to_le_bytes());
+        let program_id = Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
+        Account { lamports: 0, data, owner: program_id, executable: false, rent_epoch: 0 }
+    }
+
+    fn create_2022_mint_with_fee(bps: u16, max_fee: u64) -> Account {
+        let base_len = spl_v1::Mint::LEN;
+        let ext_len = 18u16; // minimal TransferFee struct
+        let mut data = vec![0u8; base_len + 4 + ext_len as usize];
+        {
+            use spl_token::solana_program::program_option::COption;
+            let mint = spl_v1::Mint {
+                mint_authority: COption::None,
+                supply: 0,
+                decimals: 6,
+                is_initialized: true,
+                freeze_authority: COption::None,
+            };
+            spl_v1::Mint::pack(mint, &mut data[0..base_len]).unwrap();
+        }
+        data[base_len..base_len+2].copy_from_slice(&1u16.to_le_bytes());
+        data[base_len+2..base_len+4].copy_from_slice(&ext_len.to_le_bytes());
+        let start = base_len + 4;
+        // TransferFee { epoch, max_fee, bps }
+        data[start..start+8].copy_from_slice(&0u64.to_le_bytes());
+        data[start+8..start+16].copy_from_slice(&max_fee.to_le_bytes());
+        data[start+16..start+18].copy_from_slice(&bps.to_le_bytes());
         let program_id = Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
         Account { lamports: 0, data, owner: program_id, executable: false, rent_epoch: 0 }
     }
@@ -96,6 +122,15 @@ mod tests {
         let policy = Policy::default();
         let d = is_safe(&report, &policy, false);
         assert!(!d.safe);
+    }
+
+    #[tokio::test]
+    async fn parse_transfer_fee() {
+        let account = create_2022_mint_with_fee(150, 500);
+        let report = analyze_mint(&account, 0, 0).unwrap();
+        let tf = report.transfer_fee.unwrap();
+        assert_eq!(tf.fee_bps, 150);
+        assert_eq!(tf.max_fee, 500);
     }
 
     #[tokio::test]
