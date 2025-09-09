@@ -1,5 +1,5 @@
 [package]
-name = "tg_publisher"
+name = "pool_watcher"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,4 +14,3 @@ solana-sdk = "3"
 common_types = { path = "../common_types" }
 
 [dev-dependencies]
-
