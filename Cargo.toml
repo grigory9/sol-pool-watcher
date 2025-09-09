@@ -1,5 +1,5 @@
 [package]
-name = "pool_watcher"
+name = "sol-pool-watcher"
 version = "0.1.0"
 edition = "2021"
 
@@ -30,7 +30,6 @@ liq_metrics = { path = "crates/liq_metrics" }
 hype_score = { path = "crates/hype_score" }
 tg_publisher = { path = "crates/tg_publisher" }
 file_sink = { path = "crates/file_sink" }
-token_safety = { path = "crates/token_safety" }
 pool_watcher = { path = "crates/pool_watcher" }
 lru = "0.10"
 common_types = { path = "crates/common_types" }
@@ -45,7 +44,7 @@ path = "src/arb-notify.rs"
 [workspace]
 members = [
     ".",
-    "crates/token_safety",
+    "crates/token_safety/crates/token_safety",
     "crates/pool_watcher",
     "crates/common_types",
     "crates/token_decode",
