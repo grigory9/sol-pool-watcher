@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
-use serde::Serialize;
 use serde_json::json;
 use tokio::{
     sync::mpsc,

@@ -2,6 +2,10 @@ rpc_url = "https://api.mainnet-beta.solana.com"
 ws_url = "wss://api.mainnet-beta.solana.com"
 periodic_resync_min = 30
 
+[[telegram]]
+TG_BOT_TOKEN=""
+TG_CHANNEL_ID=""
+
 [[programs]]
 kind = "OrcaWhirlpools"
 id = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"
