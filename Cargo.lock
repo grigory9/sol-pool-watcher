@@ -2675,15 +2675,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "bs58",
- "clap",
- "common_types",
  "dashmap 6.1.0",
- "file_sink",
  "futures",
- "hype_score",
- "liq_metrics",
- "lru",
  "once_cell",
  "serde",
  "serde_json",
@@ -2691,12 +2684,8 @@ dependencies = [
  "solana-client",
  "solana-commitment-config",
  "solana-sdk",
- "tg_publisher",
- "token_decode",
  "tokio",
- "toml 0.9.5",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3612,6 +3601,37 @@ checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "sol-pool-watcher"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bs58",
+ "clap",
+ "common_types",
+ "dashmap 6.1.0",
+ "file_sink",
+ "futures",
+ "hype_score",
+ "liq_metrics",
+ "lru",
+ "once_cell",
+ "pool_watcher",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-sdk",
+ "tg_publisher",
+ "token_decode",
+ "tokio",
+ "toml 0.9.5",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
