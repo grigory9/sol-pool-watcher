@@ -1,6 +1,8 @@
 use std::{
+    fs,
     num::NonZeroUsize,
     path::PathBuf,
+    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -16,7 +18,8 @@ use pool_watcher::{
 };
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
-use tg_publisher::TgPublisher;
+use serde::Deserialize;
+use tg_publisher::{TgConfig, TgPublisher};
 use token_decode::{analyze_mint, policy::Policy};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -24,9 +27,9 @@ use tracing::{info, warn};
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = Config::from_env();
+    let cfg = Config::from_file("arb-config.toml");
     let rpc = Arc::new(RpcClient::new(cfg.rpc_url.clone()));
-    let tg = TgPublisher::new_from_env()?;
+    let tg = TgPublisher::new(cfg.tg.clone())?;
     let sink = FileSink::new(FileSinkCfg {
         dir: cfg.out_dir.clone(),
         rotate_daily: true,
@@ -68,58 +71,6 @@ fn current_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn env_bool(key: &str) -> Option<bool> {
-    std::env::var(key)
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-}
-
-fn policy_from_env() -> Policy {
-    let mut p = Policy::default();
-    if let Ok(v) = std::env::var("POLICY_MAX_FEE_BPS") {
-        if let Ok(vv) = v.parse() {
-            p.max_fee_bps = vv;
-        }
-    }
-    if let Some(b) = env_bool("POLICY_REQUIRE_FREEZE_NONE") {
-        p.require_freeze_authority_none = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_NON_TRANSFERABLE") {
-        p.forbid_non_transferable = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_DEFAULT_FROZEN") {
-        p.forbid_default_frozen = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_TRANSFER_HOOK") {
-        p.forbid_transfer_hook = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_CONFIDENTIAL") {
-        p.forbid_confidential = b;
-    }
-    if let Some(b) = env_bool("POLICY_ALLOW_MINT_AUTHORITY") {
-        p.allow_mint_authority = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_MINT_CLOSE_AUTHORITY") {
-        p.forbid_mint_close_authority = b;
-    }
-    if let Some(b) = env_bool("POLICY_FORBID_PERMANENT_DELEGATE") {
-        p.forbid_permanent_delegate = b;
-    }
-    p
-}
-
-fn parse_quote_mints() -> Vec<Pubkey> {
-    use std::str::FromStr;
-    std::env::var("QUOTE_MINTS")
-        .ok()
-        .map(|s| {
-            s.split(',')
-                .filter_map(|v| Pubkey::from_str(v.trim()).ok())
-                .collect()
-        })
-        .unwrap_or_else(Vec::new)
-}
-
 #[derive(Clone)]
 struct Config {
     rpc_url: String,
@@ -129,47 +80,27 @@ struct Config {
     probe_amount: u64,
     policy: Policy,
     hype_cfg: HypeConfig,
+    tg: TgConfig,
 }
 
 impl Config {
-    fn from_env() -> Self {
-        
-        let rpc_url = std::env::var("RPC_URL")
-            .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".into());
-        let ws_url = rpc_url
-            .replace("https://", "wss://")
-            .replace("http://", "ws://");
-        let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap_or_else(|_| "./outbox".into()));
-        let probe_amount = std::env::var("PROBE_AMOUNT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1_000_000);
-        let policy = policy_from_env();
-        let quote_mints = parse_quote_mints();
-        let hype_cfg = HypeConfig {
-            bucket_secs: std::env::var("HYPE_BUCKET_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(10),
-            window60s: 60,
-            window300s: 300,
-            w_swaps: std::env::var("HYPE_W_SWAPS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.35),
-            w_unique: std::env::var("HYPE_W_UNIQUE")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.35),
-            w_bsr: std::env::var("HYPE_W_BSR")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.20),
-            w_lp: std::env::var("HYPE_W_LP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.10),
-        };
+    fn from_file(path: &str) -> Self {
+        let data = fs::read_to_string(path).expect("config read failed");
+        let RawConfig {
+            rpc_url,
+            ws_url,
+            out_dir,
+            quote_mints,
+            probe_amount,
+            policy,
+            hype,
+            telegram,
+        } = toml::from_str(&data).expect("config parse failed");
+        let quote_mints = quote_mints
+            .into_iter()
+            .filter_map(|s| Pubkey::from_str(&s).ok())
+            .collect();
+        let tg = telegram.into_iter().next().expect("telegram config missing");
         Self {
             rpc_url,
             ws_url,
@@ -177,9 +108,46 @@ impl Config {
             quote_mints,
             probe_amount,
             policy,
-            hype_cfg,
+            hype_cfg: hype,
+            tg,
         }
     }
+}
+
+#[derive(Deserialize)]
+struct RawConfig {
+    #[serde(default = "default_rpc_url")]
+    rpc_url: String,
+    #[serde(default = "default_ws_url")]
+    ws_url: String,
+    #[serde(default = "default_out_dir")]
+    out_dir: PathBuf,
+    #[serde(default)]
+    quote_mints: Vec<String>,
+    #[serde(default = "default_probe_amount")]
+    probe_amount: u64,
+    #[serde(default)]
+    policy: Policy,
+    #[serde(default)]
+    hype: HypeConfig,
+    #[serde(default)]
+    telegram: Vec<TgConfig>,
+}
+
+fn default_rpc_url() -> String {
+    "https://api.mainnet-beta.solana.com".into()
+}
+
+fn default_ws_url() -> String {
+    "wss://api.mainnet-beta.solana.com".into()
+}
+
+fn default_out_dir() -> PathBuf {
+    PathBuf::from("./outbox")
+}
+
+fn default_probe_amount() -> u64 {
+    1_000_000
 }
 
 fn spawn_logs_ingestor(bus: Arc<PoolBus>, hype: Arc<HypeAggregator>) {
@@ -407,16 +375,5 @@ mod tests {
         assert!(should_process(&mut cache, key, 0, 1000));
         assert!(!should_process(&mut cache, key, 500, 1000));
         assert!(should_process(&mut cache, key, 2000, 1000));
-    }
-
-    #[test]
-    fn test_policy_env_parse() {
-        std::env::set_var("POLICY_MAX_FEE_BPS", "50");
-        std::env::set_var("POLICY_ALLOW_MINT_AUTHORITY", "true");
-        let p = policy_from_env();
-        assert_eq!(p.max_fee_bps, 50);
-        assert!(p.allow_mint_authority);
-        std::env::remove_var("POLICY_MAX_FEE_BPS");
-        std::env::remove_var("POLICY_ALLOW_MINT_AUTHORITY");
     }
 }
