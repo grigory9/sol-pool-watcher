@@ -1,8 +1,9 @@
 use anyhow::Result;
+use common_types::{TokenExtensionFlags, TokenProgramKind, TokenSafetyReport};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
+use std::{thread, time::Duration};
 use token_safety::{self, policy::Policy, report::ProgramOwner};
-use common_types::{TokenSafetyReport, TokenProgramKind, TokenExtensionFlags};
 
 pub mod policy {
     pub use token_safety::policy::Policy;
@@ -19,7 +20,7 @@ pub async fn analyze_mint<F: MintFetcher>(
     route_supports_memo: bool,
     policy: &Policy,
 ) -> Result<TokenSafetyReport> {
-    let acc = rpc.get_account(mint)?;
+    let acc = get_account_with_retry(|| rpc.get_account(mint))?;
     let ts_report = token_safety::analyze_mint(&acc, now_epoch, probe_amount)?;
     let decision = token_safety::is_safe(&ts_report, policy, route_supports_memo);
 
@@ -63,4 +64,24 @@ impl MintFetcher for RpcClient {
     fn get_account(&self, mint: &Pubkey) -> Result<Account> {
         Ok(RpcClient::get_account(self, mint)?)
     }
+}
+
+fn get_account_with_retry<F>(mut f: F) -> Result<Account>
+where
+    F: FnMut() -> Result<Account>,
+{
+    const MAX_RETRIES: usize = 5;
+    let mut delay = Duration::from_millis(200);
+    for attempt in 0..MAX_RETRIES {
+        match f() {
+            Ok(acc) => return Ok(acc),
+            Err(_e) if attempt + 1 < MAX_RETRIES => {
+                thread::sleep(delay);
+                delay *= 2;
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("retry loop should return or error before this point")
 }
