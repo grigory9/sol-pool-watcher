@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::json;
 use tokio::{
     sync::mpsc,
@@ -28,6 +29,20 @@ struct Job {
     json_payload: Option<String>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct TgConfig {
+    #[serde(rename = "TG_BOT_TOKEN")]
+    pub bot_token: String,
+    #[serde(rename = "TG_CHANNEL_ID")]
+    pub chat_id: String,
+    #[serde(rename = "TG_SEND_JSON_ATTACHMENT", default = "default_true")]
+    pub send_json_attachment: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 impl TgPublisher {
     pub fn new_from_env() -> Result<Self> {
         let token = std::env::var("TG_BOT_TOKEN").context("TG_BOT_TOKEN not set")?;
@@ -42,6 +57,19 @@ impl TgPublisher {
             api_base: format!("https://api.telegram.org/bot{}", token),
             chat_id,
             send_json_attachment,
+            queue_tx: tx,
+        };
+        s.spawn_worker(rx);
+        Ok(s)
+    }
+
+    pub fn new(cfg: TgConfig) -> Result<Self> {
+        let (tx, rx) = mpsc::channel::<Job>(1024);
+        let s = Self {
+            client: Client::builder().build()?,
+            api_base: format!("https://api.telegram.org/bot{}", cfg.bot_token),
+            chat_id: cfg.chat_id,
+            send_json_attachment: cfg.send_json_attachment,
             queue_tx: tx,
         };
         s.spawn_worker(rx);

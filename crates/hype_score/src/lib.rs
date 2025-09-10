@@ -15,22 +15,45 @@ pub struct PoolLogEvent {
     pub trader: Option<Pubkey>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HypeConfig {
+    #[serde(default = "default_bucket_secs")]
     pub bucket_secs: u64,
+    #[serde(default = "default_window60s")]
     pub window60s: u64,
+    #[serde(default = "default_window300s")]
     pub window300s: u64,
+    #[serde(default = "default_w_swaps")]
     pub w_swaps: f32,
+    #[serde(default = "default_w_unique")]
     pub w_unique: f32,
+    #[serde(default = "default_w_bsr")]
     pub w_bsr: f32,
+    #[serde(default = "default_w_lp")]
     pub w_lp: f32,
 }
 
 impl Default for HypeConfig {
     fn default() -> Self {
-        Self { bucket_secs:10, window60s:60, window300s:300, w_swaps:0.35, w_unique:0.35, w_bsr:0.20, w_lp:0.10 }
+        Self {
+            bucket_secs: default_bucket_secs(),
+            window60s: default_window60s(),
+            window300s: default_window300s(),
+            w_swaps: default_w_swaps(),
+            w_unique: default_w_unique(),
+            w_bsr: default_w_bsr(),
+            w_lp: default_w_lp(),
+        }
     }
 }
+
+fn default_bucket_secs() -> u64 { 10 }
+fn default_window60s() -> u64 { 60 }
+fn default_window300s() -> u64 { 300 }
+fn default_w_swaps() -> f32 { 0.35 }
+fn default_w_unique() -> f32 { 0.35 }
+fn default_w_bsr() -> f32 { 0.20 }
+fn default_w_lp() -> f32 { 0.10 }
 
 #[derive(Default, Clone)]
 struct Bucket {
