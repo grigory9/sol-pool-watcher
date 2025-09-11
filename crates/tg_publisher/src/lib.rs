@@ -48,7 +48,7 @@ fn parse_chat_id(chat: &str) -> Recipient {
     if let Ok(id) = chat.parse::<i64>() {
         Recipient::Id(ChatId(id))
     } else {
-        Recipient::Username(chat.trim_start_matches('@').to_string())
+        Recipient::ChannelUsername(chat.trim_start_matches('@').to_string())
     }
 }
 
@@ -95,7 +95,7 @@ impl TgPublisher {
                     match bot
                         .send_message(chat_id.clone(), &job.text)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .disable_web_page_preview(true)
+                        // .disable_web_page_preview(true)
                         .await
                     {
                         Ok(_) => {
