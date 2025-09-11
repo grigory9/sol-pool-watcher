@@ -1,0 +1,15 @@
+[package]
+name = "tg-publisher"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3"
+tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+serde_json = "1"
+tg_publisher = { path = "../crates/tg_publisher" }
+common_types = { path = "../crates/common_types" }

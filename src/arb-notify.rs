@@ -10,18 +10,22 @@ use std::{
 use anyhow::Result;
 use common_types::{EnrichedPoolAlert, PoolTokenBundle, TokenSafetyReport};
 use file_sink::{FileSink, FileSinkCfg};
+use futures::{SinkExt, StreamExt};
 use hype_score::{HypeAggregator, HypeConfig, PoolLogEvent};
 use liq_metrics::{compute_quick, PoolInput};
 use lru::LruCache;
 use pool_watcher::{
     token::TokenSafetyProvider, types::PoolEvent, PoolBus, PoolWatcher, PoolWatcherConfig,
 };
+use serde::Deserialize;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
-use serde::Deserialize;
-use tg_publisher::{TgConfig, TgPublisher};
 use token_decode::{analyze_mint, policy::Policy};
-use tokio::sync::Mutex;
+use tokio::{
+    net::TcpListener,
+    sync::{broadcast, Mutex},
+};
+use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
 
 #[tokio::main]
@@ -29,7 +33,8 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = Config::from_file("arb-config.toml");
     let rpc = Arc::new(RpcClient::new(cfg.rpc_url.clone()));
-    let tg = TgPublisher::new(cfg.tg.clone())?;
+    let (tx, _) = broadcast::channel::<String>(1024);
+    spawn_ws_server(cfg.broadcast_addr.clone(), tx.clone());
     let sink = FileSink::new(FileSinkCfg {
         dir: cfg.out_dir.clone(),
         rotate_daily: true,
@@ -46,7 +51,7 @@ async fn main() -> Result<()> {
     spawn_pool_pipeline(
         bus.clone(),
         rpc.clone(),
-        tg.clone(),
+        tx.clone(),
         sink.clone(),
         hype.clone(),
         cfg,
@@ -80,7 +85,7 @@ struct Config {
     probe_amount: u64,
     policy: Policy,
     hype_cfg: HypeConfig,
-    tg: TgConfig,
+    broadcast_addr: String,
 }
 
 impl Config {
@@ -94,13 +99,12 @@ impl Config {
             probe_amount,
             policy,
             hype,
-            telegram,
+            broadcast_addr,
         } = toml::from_str(&data).expect("config parse failed");
         let quote_mints = quote_mints
             .into_iter()
             .filter_map(|s| Pubkey::from_str(&s).ok())
             .collect();
-        let tg = telegram.into_iter().next().expect("telegram config missing");
         Self {
             rpc_url,
             ws_url,
@@ -109,7 +113,7 @@ impl Config {
             probe_amount,
             policy,
             hype_cfg: hype,
-            tg,
+            broadcast_addr,
         }
     }
 }
@@ -130,8 +134,8 @@ struct RawConfig {
     policy: Policy,
     #[serde(default)]
     hype: HypeConfig,
-    #[serde(default)]
-    telegram: Vec<TgConfig>,
+    #[serde(default = "default_broadcast_addr")]
+    broadcast_addr: String,
 }
 
 fn default_rpc_url() -> String {
@@ -148,6 +152,10 @@ fn default_out_dir() -> PathBuf {
 
 fn default_probe_amount() -> u64 {
     1_000_000
+}
+
+fn default_broadcast_addr() -> String {
+    "127.0.0.1:9001".into()
 }
 
 fn spawn_logs_ingestor(bus: Arc<PoolBus>, hype: Arc<HypeAggregator>) {
@@ -175,10 +183,34 @@ fn spawn_logs_ingestor(bus: Arc<PoolBus>, hype: Arc<HypeAggregator>) {
     });
 }
 
+fn spawn_ws_server(addr: String, tx: broadcast::Sender<String>) {
+    tokio::spawn(async move {
+        let listener = TcpListener::bind(&addr).await.expect("ws bind failed");
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let mut rx = tx.subscribe();
+                    tokio::spawn(async move {
+                        if let Ok(ws) = accept_async(stream).await {
+                            let (mut write, _) = ws.split();
+                            while let Ok(msg) = rx.recv().await {
+                                if write.send(Message::Text(msg.clone())).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+                Err(e) => warn!(?e, "ws accept failed"),
+            }
+        }
+    });
+}
+
 async fn spawn_pool_pipeline(
     bus: Arc<PoolBus>,
     rpc: Arc<RpcClient>,
-    tg: TgPublisher,
+    tx: broadcast::Sender<String>,
     sink: FileSink,
     hype: Arc<HypeAggregator>,
     cfg: Config,
@@ -214,7 +246,7 @@ async fn spawn_pool_pipeline(
                             continue;
                         }
                         let rpc = rpc.clone();
-                        let tg = tg.clone();
+                        let tx = tx.clone();
                         let sink = sink.clone();
                         let hype = hype.clone();
                         let policy = cfg.policy.clone();
@@ -224,7 +256,7 @@ async fn spawn_pool_pipeline(
                         tokio::spawn(async move {
                             if let Err(e) = handle_pool_event(
                                 rpc,
-                                tg,
+                                tx,
                                 sink,
                                 hype,
                                 policy,
@@ -253,7 +285,7 @@ async fn spawn_pool_pipeline(
 
 async fn handle_pool_event(
     rpc: Arc<RpcClient>,
-    tg: TgPublisher,
+    tx: broadcast::Sender<String>,
     sink: FileSink,
     hype: Arc<HypeAggregator>,
     policy: Policy,
@@ -344,12 +376,15 @@ async fn handle_pool_event(
     if let Err(e) = sink.write_json("alerts_enriched", &alert).await {
         warn!(?e, ?pool, "file sink error");
     }
-    if let Err(e) = tg.send_enriched_alert(&alert).await {
-        warn!(?e, ?pool, "tg send failed");
+    if let Err(e) = tx
+        .send(serde_json::to_string(&alert)?)
+        .map_err(|e| anyhow::anyhow!(e))
+    {
+        warn!(?e, ?pool, "ws broadcast failed");
         let err = serde_json::json!({"pool": pool.to_string(), "err": format!("{}", e)});
         let _ = sink.write_json("errors", &err).await;
     } else {
-        info!(?pool, "tg sent");
+        info!(?pool, "ws broadcast");
     }
     Ok(())
 }

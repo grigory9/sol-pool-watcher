@@ -28,12 +28,12 @@ futures = "0.3"
 token_decode = { path = "crates/token_decode" }
 liq_metrics = { path = "crates/liq_metrics" }
 hype_score = { path = "crates/hype_score" }
-tg_publisher = { path = "crates/tg_publisher" }
 file_sink = { path = "crates/file_sink" }
 pool_watcher = { path = "crates/pool_watcher" }
 lru = "0.10"
 common_types = { path = "crates/common_types" }
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 
@@ -52,6 +52,7 @@ members = [
     "crates/liq_metrics",
     "crates/hype_score",
     "crates/file_sink",
+    "tg-publisher",
 ]
 
 [features]

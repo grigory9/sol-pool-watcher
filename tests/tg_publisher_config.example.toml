@@ -1,4 +1,0 @@
-# Copy to tg_publisher_config.toml and fill with real credentials
-TG_BOT_TOKEN = "replace_with_token"
-TG_CHANNEL_ID = "replace_with_channel_id"
-TG_SEND_JSON_ATTACHMENT = false

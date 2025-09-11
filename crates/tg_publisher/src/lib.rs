@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
-use reqwest::Client;
 use serde::Deserialize;
-use serde_json::json;
+use teloxide::{
+    prelude::*,
+    types::{ChatId, InputFile, ParseMode, Recipient},
+};
 use tokio::{
     sync::mpsc,
     time::{sleep, Duration},
@@ -15,9 +17,8 @@ use markdown::escape_md_v2;
 
 #[derive(Clone)]
 pub struct TgPublisher {
-    client: Client,
-    api_base: String,
-    chat_id: String,
+    bot: Bot,
+    chat_id: Recipient,
     send_json_attachment: bool,
     queue_tx: mpsc::Sender<Job>,
 }
@@ -43,6 +44,14 @@ fn default_true() -> bool {
     true
 }
 
+fn parse_chat_id(chat: &str) -> Recipient {
+    if let Ok(id) = chat.parse::<i64>() {
+        Recipient::Id(ChatId(id))
+    } else {
+        Recipient::Username(chat.trim_start_matches('@').to_string())
+    }
+}
+
 impl TgPublisher {
     pub fn new_from_env() -> Result<Self> {
         let token = std::env::var("TG_BOT_TOKEN").context("TG_BOT_TOKEN not set")?;
@@ -53,9 +62,8 @@ impl TgPublisher {
             .unwrap_or(true);
         let (tx, rx) = mpsc::channel::<Job>(1024);
         let s = Self {
-            client: Client::builder().build()?,
-            api_base: format!("https://api.telegram.org/bot{}", token),
-            chat_id,
+            bot: Bot::new(token),
+            chat_id: parse_chat_id(&chat_id),
             send_json_attachment,
             queue_tx: tx,
         };
@@ -66,9 +74,8 @@ impl TgPublisher {
     pub fn new(cfg: TgConfig) -> Result<Self> {
         let (tx, rx) = mpsc::channel::<Job>(1024);
         let s = Self {
-            client: Client::builder().build()?,
-            api_base: format!("https://api.telegram.org/bot{}", cfg.bot_token),
-            chat_id: cfg.chat_id,
+            bot: Bot::new(cfg.bot_token),
+            chat_id: parse_chat_id(&cfg.chat_id),
             send_json_attachment: cfg.send_json_attachment,
             queue_tx: tx,
         };
@@ -77,8 +84,7 @@ impl TgPublisher {
     }
 
     fn spawn_worker(&self, mut rx: mpsc::Receiver<Job>) {
-        let client = self.client.clone();
-        let api_base = self.api_base.clone();
+        let bot = self.bot.clone();
         let chat_id = self.chat_id.clone();
         let send_json_attachment = self.send_json_attachment;
         tokio::spawn(async move {
@@ -86,16 +92,20 @@ impl TgPublisher {
                 let mut attempt = 0u32;
                 loop {
                     attempt += 1;
-                    match send_message(&client, &api_base, &chat_id, &job.text).await {
+                    match bot
+                        .send_message(chat_id.clone(), &job.text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .disable_web_page_preview(true)
+                        .await
+                    {
                         Ok(_) => {
                             if send_json_attachment {
                                 if let (Some(name), Some(payload)) =
                                     (&job.json_name, &job.json_payload)
                                 {
-                                    if let Err(e) = send_document_json(
-                                        &client, &api_base, &chat_id, name, payload,
-                                    )
-                                    .await
+                                    let input = InputFile::memory(payload.as_bytes().to_vec())
+                                        .file_name(name.clone());
+                                    if let Err(e) = bot.send_document(chat_id.clone(), input).await
                                     {
                                         warn!(?e, "send_document failed");
                                     }
@@ -146,46 +156,6 @@ impl TgPublisher {
             .await
             .map_err(|_| anyhow::anyhow!("tg queue closed"))
     }
-}
-
-async fn send_message(client: &Client, api_base: &str, chat_id: &str, text: &str) -> Result<()> {
-    let url = format!("{}/sendMessage", api_base);
-    let body = json!({
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "MarkdownV2",
-        "disable_web_page_preview": true
-    });
-    let resp = client.post(&url).json(&body).send().await?;
-    let status = resp.status();
-    if !status.is_success() {
-        let s = resp.text().await.unwrap_or_default();
-        anyhow::bail!("TG sendMessage status={} body={}", status, s);
-    }
-    Ok(())
-}
-
-async fn send_document_json(
-    client: &Client,
-    api_base: &str,
-    chat_id: &str,
-    filename: &str,
-    json_payload: &str,
-) -> Result<()> {
-    let url = format!("{}/sendDocument", api_base);
-    let part = reqwest::multipart::Part::bytes(json_payload.as_bytes().to_vec())
-        .file_name(filename.to_string())
-        .mime_str("application/json")?;
-    let form = reqwest::multipart::Form::new()
-        .text("chat_id", chat_id.to_string())
-        .part("document", part);
-    let resp = client.post(&url).multipart(form).send().await?;
-    let status = resp.status();
-    if !status.is_success() {
-        let s = resp.text().await.unwrap_or_default();
-        anyhow::bail!("TG sendDocument status={} body={}", status, s);
-    }
-    Ok(())
 }
 
 fn short(pk: &solana_sdk::pubkey::Pubkey) -> String {

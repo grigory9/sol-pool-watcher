@@ -4,6 +4,7 @@ periodic_resync_min = 30
 out_dir = "./outbox"
 probe_amount = 1000000
 quote_mints = []
+broadcast_addr = "127.0.0.1:9001"
 
 [hype]
 bucket_secs = 10
@@ -26,10 +27,6 @@ max_fee_absolute = 0
 allow_mint_authority = false
 forbid_memo_required_if_route_has_no_memo = true
 forbid_mint_close_authority = false
-
-[[telegram]]
-TG_BOT_TOKEN=""
-TG_CHANNEL_ID=""
 
 [[programs]]
 kind = "OrcaWhirlpools"
