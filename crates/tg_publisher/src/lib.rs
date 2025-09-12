@@ -52,6 +52,14 @@ fn parse_chat_id(chat: &str) -> Recipient {
     }
 }
 
+impl TgConfig {
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let text = std::fs::read_to_string(path.as_ref())
+            .with_context(|| format!("read config {:?}", path.as_ref()))?;
+        toml::from_str(&text).context("parse config")
+    }
+}
+
 impl TgPublisher {
     pub fn new_from_env() -> Result<Self> {
         let token = std::env::var("TG_BOT_TOKEN").context("TG_BOT_TOKEN not set")?;
