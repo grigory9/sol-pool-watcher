@@ -3754,7 +3754,9 @@ dependencies = [
  "solana-client",
  "solana-commitment-config",
  "solana-sdk",
+ "tg_publisher",
  "token_decode",
+ "token_safety",
  "tokio",
  "tokio-tungstenite",
  "toml 0.9.5",
@@ -6880,23 +6882,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "tg-publisher"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "common_types",
- "futures",
- "serde",
- "serde_json",
- "tg_publisher",
- "tokio",
- "tokio-tungstenite",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

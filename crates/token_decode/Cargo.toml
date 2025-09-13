@@ -9,7 +9,7 @@ serde = { version = "1", features=["derive"] }
 solana-sdk = "3"
 solana-client = "3"
 common_types = { path = "../common_types" }
-token_safety = { path = "../token_safety/crates/token_safety" }
+token_safety = { path = "../token_safety" }
 
 [dev-dependencies]
 tokio = { version="1", features=["macros"] }

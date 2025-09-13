@@ -30,6 +30,8 @@ liq_metrics = { path = "crates/liq_metrics" }
 hype_score = { path = "crates/hype_score" }
 file_sink = { path = "crates/file_sink" }
 pool_watcher = { path = "crates/pool_watcher" }
+token_safety = { path = "crates/token_safety" }
+tg_publisher = { path = "crates/tg_publisher" }
 lru = "0.10"
 common_types = { path = "crates/common_types" }
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
@@ -41,18 +43,21 @@ tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
 name = "arb-notify"
 path = "src/arb-notify.rs"
 
+[[bin]]
+name = "tg-publisher"
+path = "src/tg-publisher.rs"
+
 [workspace]
 members = [
     ".",
-    "crates/token_safety/crates/token_safety",
+    "crates/token_safety",
     "crates/pool_watcher",
     "crates/common_types",
     "crates/token_decode",
-    "crates/tg_publisher",
     "crates/liq_metrics",
     "crates/hype_score",
     "crates/file_sink",
-    "tg-publisher",
+    "crates/tg_publisher",
 ]
 
 [features]
