@@ -8,7 +8,9 @@ use std::{
 };
 
 use anyhow::Result;
-use common_types::{EnrichedPoolAlert, PoolTokenBundle, TokenSafetyReport};
+use common_types::{
+    EnrichedPoolAlert, PoolTokenBundle, TokenExtensionFlags, TokenProgramKind, TokenSafetyReport,
+};
 use file_sink::{FileSink, FileSinkCfg};
 use futures::{SinkExt, StreamExt};
 use hype_score::{HypeAggregator, HypeConfig, PoolLogEvent};
@@ -19,7 +21,7 @@ use pool_watcher::{
 };
 use serde::Deserialize;
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey, pubkey::Pubkey};
 use token_decode::{analyze_mint, policy::Policy};
 use tokio::{
     net::TcpListener,
@@ -27,6 +29,8 @@ use tokio::{
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
+
+const SOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -227,6 +231,9 @@ async fn spawn_pool_pipeline(
             match ev {
                 PoolEvent::AccountNew { info, .. } | PoolEvent::AccountChanged { info, .. } => {
                     if let (Some(mint_a), Some(mint_b)) = (info.base_mint, info.quote_mint) {
+                        if sol_pair(mint_a, mint_b).is_none() {
+                            continue;
+                        }
                         let pool = info.id.account;
                         let program = info.id.program;
                         let now = current_ms();
@@ -300,41 +307,59 @@ async fn handle_pool_event(
     tick_spacing: Option<u16>,
 ) -> Result<()> {
     let epoch = rpc.get_epoch_info().map(|e| e.epoch).unwrap_or(0);
-    let (rep_a, rep_b) = {
-        let rpc_a = rpc.clone();
-        let cache_a = mint_cache.clone();
-        let policy_a = policy.clone();
-        let fut_a = async move {
-            let mut cache = cache_a.lock().await;
-            if let Some(r) = cache.get(&mint_a).cloned() {
+    let (non_sol_mint, non_sol_is_a) = match sol_pair(mint_a, mint_b) {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+
+    let rep_non_sol = {
+        let rpc_ns = rpc.clone();
+        let cache_ns = mint_cache.clone();
+        let policy_ns = policy.clone();
+        let fut = async move {
+            let mut cache = cache_ns.lock().await;
+            if let Some(r) = cache.get(&non_sol_mint).cloned() {
                 return Ok::<TokenSafetyReport, anyhow::Error>(r);
             }
             drop(cache);
-            let r = analyze_mint(&*rpc_a, &mint_a, epoch, probe_amount, true, &policy_a).await?;
-            let mut cache = cache_a.lock().await;
-            cache.put(mint_a, r.clone());
+            let r = analyze_mint(
+                &*rpc_ns,
+                &non_sol_mint,
+                epoch,
+                probe_amount,
+                true,
+                &policy_ns,
+            )
+            .await?;
+            let mut cache = cache_ns.lock().await;
+            cache.put(non_sol_mint, r.clone());
             Ok::<TokenSafetyReport, anyhow::Error>(r)
         };
-        let rpc_b = rpc.clone();
-        let cache_b = mint_cache.clone();
-        let policy_b = policy.clone();
-        let fut_b = async move {
-            let mut cache = cache_b.lock().await;
-            if let Some(r) = cache.get(&mint_b).cloned() {
-                return Ok::<TokenSafetyReport, anyhow::Error>(r);
-            }
-            drop(cache);
-            let r = analyze_mint(&*rpc_b, &mint_b, epoch, probe_amount, true, &policy_b).await?;
-            let mut cache = cache_b.lock().await;
-            cache.put(mint_b, r.clone());
-            Ok::<TokenSafetyReport, anyhow::Error>(r)
-        };
-        tokio::try_join!(fut_a, fut_b)?
+        fut.await?
+    };
+
+    if !rep_non_sol.decision_safe {
+        return Ok(());
+    }
+
+    let rep_sol = sol_report();
+    let (rep_a, rep_b) = if non_sol_is_a {
+        (rep_non_sol.clone(), rep_sol.clone())
+    } else {
+        (rep_sol.clone(), rep_non_sol.clone())
     };
 
     info!(?pool, "token decode done");
-    let decimals_a = rep_a.decimals;
-    let decimals_b = rep_b.decimals;
+    let decimals_a = if non_sol_is_a {
+        rep_non_sol.decimals
+    } else {
+        9
+    };
+    let decimals_b = if non_sol_is_a {
+        9
+    } else {
+        rep_non_sol.decimals
+    };
     let input = PoolInput {
         program,
         pool,
@@ -389,6 +414,31 @@ async fn handle_pool_event(
     Ok(())
 }
 
+fn sol_report() -> TokenSafetyReport {
+    TokenSafetyReport {
+        mint: SOL_MINT,
+        program: TokenProgramKind::TokenV1,
+        decimals: 9,
+        supply: 0,
+        mint_authority_none: true,
+        freeze_authority_none: true,
+        flags: TokenExtensionFlags::default(),
+        decision_safe: true,
+        reasons: Vec::new(),
+        warnings: Vec::new(),
+    }
+}
+
+fn sol_pair(mint_a: Pubkey, mint_b: Pubkey) -> Option<(Pubkey, bool)> {
+    if mint_a == SOL_MINT {
+        Some((mint_b, false))
+    } else if mint_b == SOL_MINT {
+        Some((mint_a, true))
+    } else {
+        None
+    }
+}
+
 fn should_process(cache: &mut LruCache<Pubkey, u64>, key: Pubkey, now: u64, ttl: u64) -> bool {
     if let Some(ts) = cache.get(&key).copied() {
         if now - ts < ttl {
@@ -410,5 +460,13 @@ mod tests {
         assert!(should_process(&mut cache, key, 0, 1000));
         assert!(!should_process(&mut cache, key, 500, 1000));
         assert!(should_process(&mut cache, key, 2000, 1000));
+    }
+
+    #[test]
+    fn test_sol_pair_detect() {
+        let other = Pubkey::new_unique();
+        assert!(sol_pair(SOL_MINT, other).is_some());
+        assert!(sol_pair(other, SOL_MINT).is_some());
+        assert!(sol_pair(other, Pubkey::new_unique()).is_none());
     }
 }
